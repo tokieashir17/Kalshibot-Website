@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KXBTCD · Toki Eashir</title>
+  <meta name="description" content="Personal project: an automated Kalshi bot for hourly Bitcoin brackets, with backtest research and a live trade log.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23171a1e' width='32' height='32'/%3E%3Cpath d='M7 11h18M7 21h18' stroke='%23e6e2da' stroke-width='1.5'/%3E%3Cpath d='M16 16c4-5 7-7 9-12' stroke='%23d4784a' fill='none' stroke-width='1.5'/%3E%3C/svg%3E">
+</head>
+<body>
+  <a class="skip" href="#about">Skip to content</a>
+
+  <header class="nav">
+    <a class="brand" href="#top">Toki Eashir</a>
+    <nav class="nav-links" aria-label="Page">
+      <a href="#about">About</a>
+      <a href="#thesis">Strategy</a>
+      <a href="#hours">Backtest</a>
+      <a href="#book">Results</a>
+      <a href="#machine">Bot</a>
+      <a href="#tape">Live tape</a>
+    </nav>
+    <button class="phase-pill" id="phase-pill" type="button" title="Current Eastern-time phase">
+      <span id="phase-time">Eastern</span>
+      <strong id="phase-name">…</strong>
+    </button>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="kicker">Personal project · Kalshi · Python</p>
+        <h1>Hourly Bitcoin<br>brackets on Kalshi</h1>
+        <p class="lede">A research-backed trading bot that straddles $100 BTC price bands each hour. Built to practice market microstructure, backtesting, and live order handling — not as a product pitch.</p>
+      </div>
+      <figure class="hero-mark" aria-hidden="true">
+        <svg viewBox="0 0 200 160" fill="none">
+          <rect class="mark-band" x="28" y="58" width="144" height="44" rx="2"/>
+          <line class="mark-floor" x1="28" y1="58" x2="172" y2="58"/>
+          <line class="mark-ceil" x1="28" y1="102" x2="172" y2="102"/>
+          <path class="mark-exit" d="M100 80 C118 80 132 52 148 28"/>
+          <circle class="mark-dot" cx="148" cy="28" r="3.5"/>
+          <text x="28" y="48" class="mark-label mark-no">floor NO</text>
+          <text x="28" y="122" class="mark-label mark-yes">ceiling YES</text>
+        </svg>
+        <figcaption>Exit the $100 band → one leg pays</figcaption>
+      </figure>
+      <ul class="stats">
+        <li><b data-fill="hours">19,199</b><span>hours backtested</span></li>
+        <li><b data-fill="exit-rate">83.97%</b><span>exit rate ($100 band)</span></li>
+        <li><b data-fill="split">50.6 / 49.4</b><span>exits up / down</span></li>
+        <li><b data-fill="net">+$13.32</b><span>June paper book</span></li>
+      </ul>
+    </section>
+
+    <section class="section" id="about">
+      <div class="wrap narrow">
+        <h2>My Thesis</h2>
+        <p>I wrote a Python bot that trades Kalshi’s KXBTCD markets: hourly “Bitcoin above $X” contracts spaced roughly $100 apart. The idea is simple — buy the floor as <span class="no">NO</span> and the ceiling as <span class="yes">YES</span>. If price leaves that band by hour’s end, one leg pays $1. If it stays inside, both expire worthless.</p>
+        <p>This page walks through the strategy, an 800-day Binance backtest, a short scored trade book from Notion, how the live loop works, and a handful of real order attempts from the bot log.</p>
+        <p class="stack">Stack: Python, Kalshi REST API, Binance 1m klines, Notion for the paper book.</p>
+      </div>
+    </section>
+
+    <section class="section" id="thesis">
+      <div class="wrap">
+        <h2>Strategy</h2>
+        <p class="intro">The bet is that Bitcoin will not finish the hour inside one $100 band — not that it goes up.</p>
+        <div class="split">
+          <div class="prose">
+            <p>The bot locks the band that held the previous hour’s close. It buys <span class="no">NO</span> on the floor and <span class="yes">YES</span> on the ceiling.</p>
+            <p><span class="no">NO</span> pays if the hour finishes at or below the floor. <span class="yes">YES</span> pays if it finishes above the ceiling. The gap between them is the loss case.</p>
+            <p><code>btcprice.py</code> measures that exit on 1.15M one-minute BTCUSDT candles. <code>strategy.py</code> stores hour-of-day exit rates from that run. Live, the bot only trades when the stored rate is ≥79%, the two legs cost ≤65¢ combined, and each leg clears a 5¢ edge.</p>
+          </div>
+          <div class="widget">
+            <h3>Try a settlement</h3>
+            <p class="hint">Example from June 19, 7:00 p.m.: 3 <span class="no">NO</span> + 3 <span class="yes">YES</span> at 30¢ each ($1.80 risk). Strikes are illustrative.</p>
+            <div class="ladder" id="ladder">
+              <div class="zone" data-zone="down">
+                <span>≤ $60,300</span>
+                <strong><span class="no">NO</span> pays</strong>
+                <em>3 × $1</em>
+              </div>
+              <div class="zone" data-zone="inside">
+                <span>$60,300–$60,400</span>
+                <strong>Both lose</strong>
+                <em>−$1.80</em>
+              </div>
+              <div class="zone" data-zone="up">
+                <span>&gt; $60,400</span>
+                <strong><span class="yes">YES</span> pays</strong>
+                <em>3 × $1</em>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label for="settle">Finish price</label>
+              <input id="settle" type="range" min="60100" max="60600" step="10" value="60350">
+            </div>
+            <div class="jumps" role="group" aria-label="Preset settlements">
+              <button type="button" data-settle="60200">Drop</button>
+              <button type="button" data-settle="60350" aria-pressed="true">Inside</button>
+              <button type="button" data-settle="60500">Break out</button>
+            </div>
+            <p class="readout" id="settle-readout" aria-live="polite"></p>
+            <p class="formula" id="settle-formula"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="hours">
+      <div class="wrap">
+        <h2>Backtest</h2>
+        <p class="intro">Apr 14, 2024 – Jun 23, 2026 · Binance BTCUSDT 1m · $100 brackets. Settlement ≈ OHLC midpoint of minute :00 (BRTI stand-in). Exit = bracket changed. Hour keys are Eastern; hour 0 = midnight.</p>
+        <div class="bt-grid">
+          <div class="bt-stat"><b>16,122 / 19,199</b><span>exits</span></div>
+          <div class="bt-stat"><b>16.03%</b><span>stayed inside</span></div>
+          <div class="bt-stat"><b>8,160 · 7,962</b><span>up · down</span></div>
+          <div class="bt-stat"><b>67.7%</b><span>moved 2+ brackets</span></div>
+        </div>
+        <div class="years" id="years"></div>
+        <div class="windows" id="windows"></div>
+        <div class="hours-layout">
+          <article class="hour-card" id="hour-card" aria-live="polite"></article>
+          <div class="hour-plot-wrap">
+            <div class="hour-plot" id="hour-plot"></div>
+            <div class="hour-labels" id="hour-labels"></div>
+          </div>
+        </div>
+        <p class="note">Every clock hour cleared 79% in this run. The bot still skips 4:00 p.m. Eastern because Kalshi’s ladder that hour isn’t $100 — <code>strategy.py</code> stores 50% on key 16. Best window: 9 a.m.–1 p.m. Softest: 2 / 5 / 6 a.m.</p>
+      </div>
+    </section>
+
+    <section class="section" id="book">
+      <div class="wrap">
+        <h2>June book</h2>
+        <p class="intro">37 settled hours (Jun 19–25, 2026) from a Notion log. P&amp;L: winning contracts × $1 minus total cost; both-loss = −cost.</p>
+        <aside class="finding">
+          <h3>Finding</h3>
+          <p id="finding-copy">Largest losses were pairs priced above 65¢ — the live bot’s cost ceiling would have refused them.</p>
+        </aside>
+        <div class="chart-card">
+          <div class="legend">
+            <span><i class="swatch book"></i>Full book <b id="legend-book"></b></span>
+            <span><i class="swatch rules"></i>If bot rules applied <b id="legend-rules"></b></span>
+          </div>
+          <svg id="equity" viewBox="0 0 760 300" role="img" tabindex="0" aria-label="Cumulative P&amp;L. Dark line is the full book. Accent line holds flat when current bot rules would skip."></svg>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+        <div class="book-tools">
+          <div class="filters" role="group" aria-label="Filter the book">
+            <button type="button" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" data-filter="up">Broke up</button>
+            <button type="button" data-filter="down">Broke down</button>
+            <button type="button" data-filter="inside">Stayed</button>
+            <button type="button" data-filter="rules">Bot would take</button>
+          </div>
+          <p class="book-summary" id="book-summary" aria-live="polite"></p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption class="sr">June betting book</caption>
+            <thead>
+              <tr>
+                <th><button type="button" data-sort="when">When</button></th>
+                <th>Legs</th>
+                <th class="num"><button type="button" data-sort="cost">Paid</button></th>
+                <th class="num"><button type="button" data-sort="combined">Pair</button></th>
+                <th>Settlement</th>
+                <th class="num"><button type="button" data-sort="pnl">P&amp;L</button></th>
+                <th>Rule</th>
+              </tr>
+            </thead>
+            <tbody id="book-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="machine">
+      <div class="wrap">
+        <h2>Live loop</h2>
+        <div class="machine">
+          <div class="clock-wrap">
+            <div class="clock" id="clock" aria-hidden="true">
+              <span class="clock-label m0">:00</span>
+              <span class="clock-label m15">:15</span>
+              <span class="clock-label m30">:30</span>
+              <span class="clock-label m45">:45</span>
+              <div class="needle" id="needle"></div>
+              <div class="hub"></div>
+            </div>
+            <p class="clock-readout" id="clock-readout" aria-live="polite"></p>
+            <button class="play" id="clock-play" type="button">Run the hour</button>
+          </div>
+          <div>
+            <p class="intro">Polls ~1s. Locks bracket from prior close. Fetches budget at minute :04. Places at most once per hour in the entry window.</p>
+            <ul class="phases">
+              <li>Observe · :00–:05</li>
+              <li>Enter · :06–:29</li>
+              <li>Hold · :30–:53</li>
+              <li>Settle · :54–:59</li>
+            </ul>
+            <div class="specs">
+              <div class="spec"><b>$100</b><span>bracket</span></div>
+              <div class="spec"><b>≤65¢</b><span>pair cost</span></div>
+              <div class="spec"><b>≥5¢</b><span>edge / leg</span></div>
+              <div class="spec"><b>≥79%</b><span>exit rate</span></div>
+              <div class="spec"><b>20%</b><span>cash / hour ($1–$5)</span></div>
+              <div class="spec"><b>92¢</b><span>take-profit sell</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="tape">
+      <div class="wrap">
+        <h2>Live order tape</h2>
+        <p class="intro">Seven signals from <code>bets_log.json</code> (Aug 12–23). Order acceptance and take-profit placement — not settlement P&amp;L.</p>
+        <div class="tape-stats" id="tape-stats"></div>
+        <div class="signals" id="tape-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <p>Toki Eashir · Sources: <code>btcprice.py</code>, Notion <a href="https://app.notion.com/p/3848c046f286802fb380f62101249adc">BTC betting</a>, <code>strategy.py</code>, <code>bets_log.json</code>.</p>
+      <p>Backtest is a price path, not fills. June book is 37 hours. Not financial advice.</p>
+    </div>
+  </footer>
+  <p class="sr" id="audit"></p>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
